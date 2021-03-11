@@ -19,24 +19,24 @@ def _addindent(s_, numSpaces):
 def _std_child_lines(obj, separator='\n'):
     child_lines = []
     for key, value in obj.__dict__.items():
-        mod_str = repr(value) 
+        mod_str = repr(value)
         mod_str = _addindent(mod_str, 2)
         child_lines.append('# ' + key + ': ' + mod_str)
     child_str = ''
     if child_lines:
-        child_str +=  '{} '.format(separator).join(child_lines) 
+        child_str +=  '{} '.format(separator).join(child_lines)
     return child_str
 
 def _sub_child_lines(obj, separator='\n', exclude=[]):
     child_lines = []
     for key, value in obj.__dict__.items():
         if key not in exclude:
-            mod_str = repr(value) 
+            mod_str = repr(value)
             mod_str = _addindent(mod_str, 2)
             child_lines.append('# ' + key + ': ' + mod_str)
     child_str = ''
     if child_lines:
-        child_str +=  '{} '.format(separator).join(child_lines) 
+        child_str +=  '{} '.format(separator).join(child_lines)
     return child_str
 
 def _std_repr(obj, separator='\n'):
@@ -57,7 +57,8 @@ def gymSpace2dim(gym_space):
     if isinstance(gym_space, gym.spaces.Box):
         l_sp = list(gym_space.shape)
         return l_sp[0] if len(l_sp) <2 else l_sp
-    
+    return gym_space
+
 
 def load(name):
     mod_name, attr_name = name.split(":")
@@ -70,7 +71,7 @@ class ClassSpec(object):
         self.id = id
         self.entry_point = entry_point
         self._kwargs = {} if kwargs is None else kwargs
-        
+
     def make(self, **kwargs):
         if self.entry_point is None:
             raise Exception('Attempting to make deprecated class {}.'.format(self.id))
@@ -82,13 +83,13 @@ class ClassSpec(object):
             cls = load(self.entry_point)
             expl = cls(**_kwargs)
         return expl
-    
+
 def reset_logging():
     import logging
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
-##### Tools for data preprocessing ##### 
+##### Tools for data preprocessing #####
 
 def super_cat(obs, act):
     if type(obs[0]) is not np.ndarray and type(obs[0]) is not list and len(obs.shape) <=1 and len(act.shape) <=1:
@@ -125,7 +126,7 @@ def seq2unique_transition(seq_transition):
             for field in fields_:
                 if isinstance(dict_transition[field], dict):
                     for key in dict_transition[field].keys():
-                        dict_transition[field][key].append(getattr(tr, field)[key])    
+                        dict_transition[field][key].append(getattr(tr, field)[key])
                 else:
                     dict_transition[field].append(getattr(tr, field))
         return transition_class(**dict_transition)
@@ -151,9 +152,9 @@ def zeros_like(var):
         zero_var = False
     if zero_var is None:
         zero_var = None
-    
+
     # assert zero_var is not None, "Erreur type nonreconnu ({}): {}".format(type(var), var)
-    return zero_var 
+    return zero_var
 
 def ones_like(var):
     return v_like(var, value=1.)
@@ -177,11 +178,11 @@ def v_like(var, value=0):
             new_var = True
         else :
             raise TypeError("bool doesn't match with value ", value)
-        
-    assert new_var is not None, "Erreur type non reconnu ({}): {}".format(type(var), var)
-    return new_var 
 
-            
+    assert new_var is not None, "Erreur type non reconnu ({}): {}".format(type(var), var)
+    return new_var
+
+
 def pad_like(transition):
     dict_transition = {}
     if transition.__class__.__name__ != "FFTransition":
@@ -197,7 +198,7 @@ def pad_like(transition):
                                 done_flag=done_flag,
                                 next_observation=next_observation)
 
-    
+
 def is_done(done):
     if type(done) is bool:
         return done

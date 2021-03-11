@@ -12,12 +12,14 @@ from ..tools import seq2unique_transition
 
 transition_type = {
     "FFTransition" : ['observation', 'action', 'reward', 'next_observation', 'done_flag'],
-    "RNNTransition" : ['observation','h0', 'action', 'reward', 'done_flag', 'seq_len']
+    "RNNTransition" : ['observation','h0', 'action', 'reward', 'done_flag', 'seq_len'],
+    "COMATransition" : ['observation', 'action', "prob_action", 'reward', 'next_observation', 'done_flag'],
 }
 
 transition_tuple = {
     "FFTransition": namedtuple('FFTransition', field_names=transition_type["FFTransition"]),
-    "RNNTransition": namedtuple('RNNTransition', field_names=transition_type["RNNTransition"])
+    "RNNTransition": namedtuple('RNNTransition', field_names=transition_type["RNNTransition"]),
+    "COMATransition": namedtuple('COMATransition', field_names=transition_type["COMATransition"])
 }
 
 class ReplayMemory(Experience):
@@ -72,8 +74,7 @@ class ReplayMemory(Experience):
 
     def sample_index(self, batch_size):
         assert batch_size <= len(self)
-        # return np.random.randint(len(self), size=batch_size)
-        return np.arange(len(self) - batch_size, len(self))
+        return np.random.randint(len(self), size=batch_size)
 
     def as_dict(self, n=None):
         tr_dict = []

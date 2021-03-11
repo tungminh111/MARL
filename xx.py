@@ -1,6 +1,7 @@
 import marl
+from marl.coma import COMA
 from marl import MARL
-from marl.agent import MinimaxQAgent
+from marl.agent.coma_agent import COMAAgent
 from marl.exploration import EpsGreedy
 
 from soccer import DiscreteSoccerEnv
@@ -14,18 +15,18 @@ act_s = env.action_space
 expl = EpsGreedy(eps_deb=1.,eps_fin=.3)
 
 # Create two minimax-Q agents
-q_agent1 = MinimaxQAgent(obs_s, act_s, act_s, exploration=expl, gamma=0.9, lr=0.001, name="SoccerJ1")
-q_agent2 = MinimaxQAgent(obs_s, act_s, act_s, exploration=expl, gamma=0.9, lr=0.001, name="SoccerJ2")
+agent1 = COMAAgent(1, act_s, agent_quan=2, lr_critic=0.000001, exploration=expl, name="SoccerJ1")
+agent2 = COMAAgent(1, act_s, agent_quan=2, lr_critic=0.000001, exploration=expl, name="SoccerJ2")
 
 # Create the trainable multi-agent system
-mas = MARL(agents_list=[q_agent1, q_agent2])
+mas = COMA(agents_list=[agent1, agent2])
 
 # Assign MAS to each agent
-q_agent1.set_mas(mas)
-q_agent2.set_mas(mas)
+agent1.set_mas(mas)
+agent2.set_mas(mas)
 
 # Train the agent for 100 000 timesteps
-mas.learn(env, nb_timesteps=1000000)
+mas.learn(env, ep_iter=10, batch_size=16)
 
 # Test the agents for 10 episodes
 mas.test(env, nb_episodes=10, time_laps=0.5)
