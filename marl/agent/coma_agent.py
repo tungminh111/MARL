@@ -10,7 +10,7 @@ from marl.agent import TrainableAgent, MATrainable
 
 class COMAAgent(TrainableAgent, MATrainable):
 
-    def __init__(self,  observation_space, action_space, critic_model='MlpNet', actor_policy=None, agent_quan = 1, actor_model = 'MlpNet', index = None, mas = None, experience = "ReplayMemory-1000", exploration="EpsGreedy", lr_actor=0.001, lr_critic=0.001, gamma=0.95, batch_size=32, tau=0.01, use_target_net=False, name="COMAAgent"):
+    def __init__(self,  observation_space, action_space, critic_model='MlpNet', actor_policy=None, agent_quan = 1, actor_model = 'MlpNet', index = None, mas = None, experience = "ReplayMemory-1000", exploration="EpsGreedy", lr_actor=0.001, lr_critic=0.001, gamma=0.99, batch_size=32, tau=0.01, use_target_net=False, name="COMAAgent"):
         TrainableAgent.__init__(self, policy=actor_policy, model=actor_model, observation_space=observation_space, action_space=action_space, experience=experience, exploration=exploration, lr=lr_actor, gamma=gamma, batch_size=batch_size)
         MATrainable.__init__(self, mas, index)
 
@@ -40,11 +40,12 @@ class COMAAgent(TrainableAgent, MATrainable):
         for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
             target_param.data.copy_(tau * local_param.data + (1.0 - tau) * target_param.data)
 
-    def store_experience(self, *args):
-        observation, actions, prob_ac
-
     def get_critic_input(self, ob, ac, other_ac):
         return torch.cat([ob.view(1, -1).squeeze(0), ac.view(1, -1).squeeze(0), other_ac.view(1, -1).squeeze(0)], -1)
+
+    def get_critic_output(self, ob, ac, other_ac):
+        return self.critic_model(self.get_critic_input(torch.tensor([ob], dtype=torch.float), torch.tensor([ac], dtype=torch.float), torch.tensor(other_ac, dtype=torch.float)))
+
 
     def update_critic(self, indices):
         loss = torch.tensor(0.0)
@@ -67,27 +68,33 @@ class COMAAgent(TrainableAgent, MATrainable):
                 # get next action
                 next_idx = indices[len(indices) - 1 - (i - 1)]
                 obs, acs, rews, next_obs, dones = self.mas.experience.get_transition([next_idx])
-                next_ac = acs.squeeze(0)[self.index]
                 next_ob = obs.squeeze(0)[self.index]
                 next_other_ac = [acs.squeeze(0)[j] for j in range(len(acs.squeeze(0))) if j != self.index]
                 # compute taget value
                 target_value = 0
-                target_value += rew
-                target_value += self.gamma * self.critic_model(self.get_critic_input(torch.tensor([next_ob], dtype=torch.float), torch.tensor([next_ac], dtype=torch.float), torch.tensor(next_other_ac, dtype=torch.float))).clone().detach()
+
+                # get log prob
+                log_prob = self.policy.model(torch.tensor([next_ob], dtype=torch.float))
+                log_prob = torch.distributions.Categorical(log_prob).probs
+
+                for j in range(gymSpace2dim(self.action_space)):
+                    target_value += log_prob[j] * self.get_critic_output(next_ob, j, next_other_ac).clone().detach()
+                target_value *= rew + self.gamma * target_value
+                #print(":::CRITIC_INPUT", self.get_critic_input(torch.tensor([next_ob], dtype=torch.float), torch.tensor([next_ac], dtype=torch.float), torch.tensor(next_other_ac, dtype=torch.float)), target_value)
             temp.append(target_value)
             #print(":::CRITIC", target_value)
 
             # compute current value
             cur_value = 0
-            cur_value += self.critic_model(self.get_critic_input(torch.tensor([ob], dtype=torch.float), torch.tensor([ac], dtype=torch.float), torch.tensor(other_ac, dtype=torch.float)))
+            cur_value += self.get_critic_output(ob, ac, other_ac)
 
             loss += self.critic_criterion(cur_value, target_value)
 
 
-        #loss /= len(indices)
+        loss /= len(indices)
         print(":::CRITIC LOSS", self.index, loss)
         self.critic_optimizer.zero_grad()
-
+        result = loss
 
         loss.backward()
         self.critic_optimizer.step()
@@ -112,16 +119,21 @@ class COMAAgent(TrainableAgent, MATrainable):
             #compute current value
             target_value = temp[i]
             cur_value = 0
-            cur_value += self.critic_model(self.get_critic_input(torch.tensor([ob], dtype=torch.float), torch.tensor([ac], dtype=torch.float), torch.tensor(other_ac, dtype=torch.float)))
+            cur_value += self.get_critic_output(ob, ac, other_ac)
 
             loss += self.critic_criterion(cur_value, target_value)
 
-        #loss /= len(indices)
+        loss /= len(indices)
         print(":::NEWLOSS", self.index, loss)
+
+        return result
+
+
 
 
     def update_actor(self, indices):
         actor_loss = []
+        p = []
         for i in range(len(indices)):
             idx = indices[len(indices) - 1 - i]
 
@@ -135,26 +147,34 @@ class COMAAgent(TrainableAgent, MATrainable):
             other_ac = [acs.squeeze(0)[j] for j in range(len(acs.squeeze(0))) if j != self.index]
 
             # get log prob
-            log_prob = self.policy.model(torch.tensor([ob], dtype=torch.float))
-            log_prob = torch.distributions.Categorical(log_prob).probs
+            prob = self.policy.model(torch.tensor([ob], dtype=torch.float))
+            prob = torch.distributions.Categorical(prob).probs
+            p.append(prob)
 
             # compute actor loss
             actor_loss.append(0)
-            actor_loss[i] = self.critic_model(self.get_critic_input(torch.tensor([ob], dtype=torch.float), torch.tensor([ac], dtype=torch.float), torch.tensor(other_ac, dtype=torch.float)))
+            actor_loss[i] = self.get_critic_output(ob, ac, other_ac)
 
             for j in range(gymSpace2dim(self.action_space)):
-                actor_loss[i] -= log_prob[j] * self.critic_model(self.get_critic_input(torch.tensor([ob], dtype=torch.float), torch.tensor([[j]], dtype=torch.float), torch.tensor(other_ac, dtype=torch.float)))
+                actor_loss[i] -= prob[j].clone().detach() * self.get_critic_output(ob, j, other_ac)
+            actor_loss[i] *= prob[ac]
 
         # optimize
         loss = 0
         for i in range(len(indices)):
             loss -= actor_loss[i]
         loss /= len(indices)
-        print("ACTORLOSS", self.index, loss)
+        print("ACTORLOSS", self.index, self.lr, loss)
 
         self.actor_optimizer.zero_grad()
         loss.backward()
+     #   for i in self.policy.model.parameters():
+     #       print(":::BEFORE", i, i.grad)
+     #       break
         self.actor_optimizer.step()
+     #   for i in self.policy.model.parameters():
+     #       print(":::AFTER", i)
+     #       break
 
 
         actor_loss = []
@@ -171,15 +191,18 @@ class COMAAgent(TrainableAgent, MATrainable):
             other_ac = [acs.squeeze(0)[j] for j in range(len(acs.squeeze(0))) if j != self.index]
 
             # get log prob
-            log_prob = self.policy.model(torch.tensor([ob], dtype=torch.float))
-            log_prob = torch.distributions.Categorical(log_prob).probs
+            prob = p[i]
+            cur_prob = self.policy.model(torch.tensor([ob], dtype=torch.float))
+            cur_prob = torch.distributions.Categorical(prob).probs
 
             # compute actor loss
             actor_loss.append(0)
-            actor_loss[i] = self.critic_model(self.get_critic_input(torch.tensor([ob], dtype=torch.float), torch.tensor([ac], dtype=torch.float), torch.tensor(other_ac, dtype=torch.float)))
+            actor_loss[i] = self.get_critic_output(ob, ac, other_ac)
 
             for j in range(gymSpace2dim(self.action_space)):
-                actor_loss[i] -= log_prob[j] * self.critic_model(self.get_critic_input(torch.tensor([ob], dtype=torch.float), torch.tensor([[j]], dtype=torch.float), torch.tensor(other_ac, dtype=torch.float)))
+                actor_loss[i] -= prob[j].clone().detach() * self.get_critic_output(ob, j, other_ac)
+
+            actor_loss[i] *= cur_prob[ac]
                 #print(":::ACTOR",actor_loss[i])
 
         # optimize

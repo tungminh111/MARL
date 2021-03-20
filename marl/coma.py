@@ -46,7 +46,7 @@ class COMA(MARL):
         test = False
         self.reset_exploration(max_num_step * batch_size * ep_iter)
         #ep_iter is the number of training loop
-        for _ in range(ep_iter):
+        for _i in range(ep_iter):
             cur_iter += 1
             ep_num = batch_size
             experience_indices = []
@@ -73,7 +73,9 @@ class COMA(MARL):
                         env.render()
                         time.sleep(time_laps)
 
-            self.update_critic(experience_indices);
+            loss = self.update_critic(experience_indices);
+            self.writer.add_scalar("LOSS/L1", loss[0], cur_iter)
+            self.writer.add_scalar("LOSS/L2", loss[1], cur_iter)
             self.update_actor(experience_indices);
             # Save model
             print("#> iteration {}/{} --- Save Model\n".format(cur_iter, ep_iter))
@@ -112,9 +114,7 @@ class COMA(MARL):
 
 
     def update_critic(self, indices):
-        for ag in self.agents:
-            if isinstance(ag, TrainableAgent):
-                ag.update_critic(indices)
+        return [ag.update_critic(indices) for ag in self.agents if isinstance(ag, TrainableAgent)]
 
     def update_actor(self, indices):
         for ag in self.agents:
